@@ -43,6 +43,7 @@
   .codeblock{background:var(--code);border:1px solid var(--line);border-radius:9px;padding:12px 60px 12px 14px;position:relative;
     color:var(--codeink);font-family:"SF Mono",Menlo,Consolas,monospace;font-size:12.5px;
     word-break:break-all;line-height:1.5;min-height:42px}
+  .codeblock.pre{white-space:pre-wrap;word-break:normal}
   .copy{position:absolute;top:8px;right:8px;background:var(--accent);border:none;color:#fff;font-size:11px;font-weight:600;
     padding:4px 10px;border-radius:6px;cursor:pointer;font-family:inherit}
   .copy:hover{background:#c52a26}
@@ -84,8 +85,9 @@
             <option value="other">Other</option>
           </select>
         </div>
-        <div class="field"><label>Link location</label>
+        <div class="field"><label>Link location <span class="hint">optional</span></label>
           <select id="loc">
+            <option value="" selected>&mdash; none &mdash;</option>
             <option value="sms">SMS</option>
             <option value="email">Email</option>
             <option value="dm">DM</option>
@@ -94,34 +96,41 @@
             <option value="other">Other</option>
           </select>
         </div>
-        <div class="field"><label>Variant <span class="hint">spaces -&gt; _</span></label>
+        <div class="field"><label>Variant <span class="hint">optional</span></label>
           <select id="variant">
+            <option value="" selected>&mdash; none &mdash;</option>
             <option value="abandoned_cart">Abandoned cart</option>
             <option value="day_1">Day 1</option>
             <option value="day_2">Day 2</option>
             <option value="last_chance">Last chance</option>
             <option value="retarget">Retarget</option>
-            <option value="none">None</option>
           </select>
+        </div>
+        <div class="field"><label>Custom tag <span class="hint">optional &middot; free text</span></label>
+          <input id="custom" placeholder="e.g. q3-promo">
         </div>
       </div>
 
       <div class="lbl"><span class="dot"></span>Full link &middot; copy this</div>
       <div class="codeblock"><button class="copy">Copy</button><span id="full"></span></div>
 
-      <p class="note">Token = base64url(JSON) + <code>.</code> + checksum. Date is stamped automatically (today). The checksum lets Supabase detect a lead editing the value. Calendly drops non-UTM keys, so the code rides <code>utm_content</code>; it appears in Calendly's webhook payload.</p>
+      <p class="note">Token = base64url(JSON) + <code>.</code> + checksum. The JSON carries full-name keys (<code>funnel</code>, <code>linkLocation</code>, <code>variant</code>, <code>date</code>, <code>customTag</code>) so it decodes self-describing, with every key always present (empty string when unset). Link location, variant and custom tag are optional. Date stamps automatically as ISO <code>YYYY-MM-DD</code> (today). The checksum lets Supabase detect a lead editing the value. Calendly drops non-UTM keys, so the code rides <code>utm_content</code>; it appears in Calendly's webhook payload.</p>
   </div>
 
   <!-- DECODE -->
   <div class="pane" id="dec">
       <div class="field"><label>Paste a token or full URL</label>
-        <textarea id="decin" placeholder="eyJm...== .h84p   or   https://...?utm_content=eyJm..."></textarea>
+        <textarea id="decin" placeholder="eyJm...==.h84p   or   https://...?utm_content=eyJm..."></textarea>
       </div>
       <div class="decoded">
         <div class="lbl"><span class="dot" id="statusdot" style="background:var(--muted)"></span>Result <span id="status" style="margin-left:6px"></span></div>
         <table id="dectable"><tbody></tbody></table>
+        <div id="decjsonwrap" style="display:none">
+          <div class="lbl"><span class="dot"></span>Decoded JSON <span class="hint">raw payload Supabase receives</span></div>
+          <div class="codeblock pre"><button class="copy">Copy</button><span id="decjson"></span></div>
+        </div>
       </div>
-      <p class="note">Shows the sales team exactly how a packed link unpacks. A failed checksum or unreadable token flags as tampered/invalid rather than guessing.</p>
+      <p class="note">Shows the sales team exactly how a packed link unpacks, plus the raw JSON the decoder hands to Supabase. A failed checksum or unreadable token flags as tampered/invalid rather than guessing.</p>
   </div>
  </div>
 </div>
@@ -166,9 +175,15 @@
   }});
 
   // ---- encode ----
-  function dateStamp(){var d=new Date();return ''+d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');}
+  function dateStamp(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
   function buildEnc(){
-    var payload={f:$('funnel').value,l:$('loc').value,v:$('variant').value,d:dateStamp()};
+    var payload={
+      funnel:$('funnel').value,
+      linkLocation:$('loc').value,
+      variant:$('variant').value,
+      date:dateStamp(),
+      customTag:$('custom').value.trim()
+    };
     var tok=encodeToken(payload);
     var b=$('base').value.trim();
     $('full').textContent = b ? b+(b.indexOf('?')>-1?'&':'?')+'utm_content='+encodeURIComponent(tok) : '(add destination link above)';
@@ -177,12 +192,25 @@
   ['funnel','loc','variant'].forEach(function(id){
     $(id).addEventListener('change',buildEnc);
   });
+  $('custom').addEventListener('input',buildEnc);
   buildEnc();
 
   // ---- decode ----
-  var LABELS={f:'Funnel',l:'Link location',v:'Variant',d:'Date'};
-  function fmtDate(d){ if(/^\d{8}$/.test(d)) return d.slice(0,4)+'-'+d.slice(4,6)+'-'+d.slice(6,8); return d; }
-  function pretty(v){ return (v||'').replace(/_/g,' '); }
+  function esc(s){ return (''+s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function fmtDate(d){ d=''+(d||''); if(/^\d{8}$/.test(d)) return d.slice(0,4)+'-'+d.slice(4,6)+'-'+d.slice(6,8); return d; }
+  function pretty(v){ return (''+(v||'')).replace(/_/g,' '); }
+  // accept both new full-name keys and legacy short keys (f/l/v/d/c)
+  function pick(obj,full,short){ return obj[full]!==undefined?obj[full]:(obj[short]!==undefined?obj[short]:''); }
+  function normalize(obj){
+    return {
+      funnel: pick(obj,'funnel','f'),
+      linkLocation: pick(obj,'linkLocation','l'),
+      variant: pick(obj,'variant','v'),
+      date: fmtDate(pick(obj,'date','d')),
+      customTag: pick(obj,'customTag','c')
+    };
+  }
+  var ROWS=[['funnel','Funnel'],['linkLocation','Link location'],['variant','Variant'],['date','Date'],['customTag','Custom tag']];
   function runDecode(){
     var raw=$('decin').value.trim(), tok=raw;
     if(raw.indexOf('utm_content=')>-1){
@@ -190,22 +218,26 @@
       catch(e){ var m=raw.match(/utm_content=([^&\s]+)/); if(m) tok=decodeURIComponent(m[1]); }
     }
     var tb=$('dectable').querySelector('tbody'); tb.innerHTML='';
-    var st=$('status'), dot=$('statusdot');
+    var st=$('status'), dot=$('statusdot'), jw=$('decjsonwrap');
+    jw.style.display='none';
     if(!tok){ st.innerHTML=''; dot.style.background='var(--muted)'; return; }
     var r=decodeToken(tok);
     if(!r.ok){
-      st.innerHTML='<span class="badge bad">'+r.reason+'</span>'; dot.style.background='var(--warn)';
+      st.innerHTML='<span class="badge bad">'+esc(r.reason)+'</span>'; dot.style.background='var(--warn)';
       return;
     }
     if(r.tamper){ st.innerHTML='<span class="badge bad">Checksum mismatch &middot; tampered</span>'; dot.style.background='var(--warn)'; }
     else { st.innerHTML='<span class="badge ok">Valid</span>'; dot.style.background='var(--ok)'; }
-    ['f','l','v','d'].forEach(function(k){
-      if(r.data[k]===undefined) return;
-      var val = k==='d'? fmtDate(r.data[k]) : pretty(r.data[k]);
+    var norm=normalize(r.data);
+    ROWS.forEach(function(pair){
+      var k=pair[0], v=norm[k];
+      var disp = v ? esc((k==='customTag'||k==='date') ? v : pretty(v)) : '<span style="color:var(--muted)">(none)</span>';
       var tr=document.createElement('tr');
-      tr.innerHTML='<td class="k">'+LABELS[k]+'</td><td>'+val+' <span style="color:var(--muted);font-size:11px">('+r.data[k]+')</span></td>';
+      tr.innerHTML='<td class="k">'+pair[1]+'</td><td>'+disp+'</td>';
       tb.appendChild(tr);
     });
+    $('decjson').textContent=JSON.stringify(norm,null,2);
+    jw.style.display='block';
   }
   $('decin').addEventListener('input',runDecode);
 
