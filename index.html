@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UTM Encoder / Decoder</title>
+<style>
+  :root{
+    /* STC brand: red on near-black, white text */
+    --bg:#0a0a0c; --panel:#141417; --panel2:#1b1b1f; --line:#2a2a30;
+    --ink:#f5f5f7; --muted:#9a9aa5; --accent:#e2342f; --accent-dim:#7a1e1c;
+    --ok:#3ad29f; --warn:#e8a13a;
+    --code:#000000; --codeink:#e7e7ea; --field:#0e0e11;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:transparent;color:var(--ink);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:760px;margin:0 auto;padding:14px}
+  /* one unified card holds everything */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;
+    box-shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 8px 28px rgba(0,0,0,.45)}
+  .head{border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:16px}
+  h1{font-size:18px;margin:0 0 3px;letter-spacing:-.01em}
+  h1 .mark{color:var(--accent);font-weight:800}
+  .sub{color:var(--muted);font-size:12.5px;margin:0}
+  .tabs{display:flex;gap:6px;margin:0 0 16px}
+  .tab{flex:1;text-align:center;background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    padding:9px 12px;border-radius:9px;cursor:pointer;font-size:13px;font-weight:600;transition:.12s}
+  .tab:hover{color:var(--ink);border-color:var(--accent-dim)}
+  .tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .pane{display:none}.pane.active{display:block}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  label{display:block;font-size:11px;color:var(--muted);margin:0 0 4px;font-weight:600;letter-spacing:.03em;text-transform:uppercase}
+  .field{margin-bottom:4px}
+  .hint{font-size:10.5px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px}
+  input,select,textarea{width:100%;background:var(--field);border:1px solid var(--line);color:var(--ink);
+    padding:9px 11px;border-radius:8px;font-size:13.5px;font-family:inherit;-webkit-appearance:none;appearance:none}
+  textarea{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:12.5px;min-height:64px;resize:vertical}
+  select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239a9aa5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:30px}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(226,52,47,.18)}
+  .lbl{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em;margin:16px 0 6px;display:flex;align-items:center;gap:8px}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block;background:var(--accent)}
+  .codeblock{background:var(--code);border:1px solid var(--line);border-radius:9px;padding:12px 60px 12px 14px;position:relative;
+    color:var(--codeink);font-family:"SF Mono",Menlo,Consolas,monospace;font-size:12.5px;
+    word-break:break-all;line-height:1.5;min-height:42px}
+  .copy{position:absolute;top:8px;right:8px;background:var(--accent);border:none;color:#fff;font-size:11px;font-weight:600;
+    padding:4px 10px;border-radius:6px;cursor:pointer;font-family:inherit}
+  .copy:hover{background:#c52a26}
+  .note{font-size:12px;color:var(--muted);margin-top:14px;line-height:1.55;border-top:1px solid var(--line);padding-top:12px}
+  .note code,.sub code,.lbl code{color:#ff7a76}
+  .decoded{margin-top:14px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  td{padding:7px 10px;border-bottom:1px solid var(--line)}
+  td.k{color:var(--muted);width:140px;font-size:12px;text-transform:uppercase;letter-spacing:.02em}
+  .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:600}
+  .badge.ok{background:rgba(58,210,159,.15);color:var(--ok)}
+  .badge.bad{background:rgba(232,161,58,.15);color:var(--warn)}
+</style>
+</head>
+<body>
+<div class="wrap">
+ <div class="card">
+  <div class="head">
+    <h1><span class="mark">STC</span> UTM Encoder / Decoder</h1>
+    <p class="sub">Packs funnel tracking into one tamper-checked token on <code>utm_content</code> (the key Calendly captures). Standard utm_source/medium/campaign stay free for the client's marketing partner.</p>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-p="enc">Encode</div>
+    <div class="tab" data-p="dec">Decode</div>
+  </div>
+
+  <!-- ENCODE -->
+  <div class="pane active" id="enc">
+      <div class="field" style="margin-bottom:12px"><label>Destination link <span class="hint">booking / Calendly URL</span></label><input id="base" value="https://calendly.com/client/strategy-call" placeholder="https://..."></div>
+      <div class="grid">
+        <div class="field"><label>Funnel</label>
+          <select id="funnel">
+            <option value="webinar">Webinar</option>
+            <option value="challenge">Challenge</option>
+            <option value="reengagement">Re-engagement / follow-up</option>
+            <option value="vsl">VSL</option>
+            <option value="application">Application</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="field"><label>Link location</label>
+          <select id="loc">
+            <option value="sms">SMS</option>
+            <option value="email">Email</option>
+            <option value="dm">DM</option>
+            <option value="bio">Bio link</option>
+            <option value="ad">Ad</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="field"><label>Variant <span class="hint">spaces -&gt; _</span></label>
+          <select id="variant">
+            <option value="abandoned_cart">Abandoned cart</option>
+            <option value="day_1">Day 1</option>
+            <option value="day_2">Day 2</option>
+            <option value="last_chance">Last chance</option>
+            <option value="retarget">Retarget</option>
+            <option value="none">None</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="lbl"><span class="dot"></span>Full link &middot; copy this</div>
+      <div class="codeblock"><button class="copy">Copy</button><span id="full"></span></div>
+
+      <p class="note">Token = base64url(JSON) + <code>.</code> + checksum. Date is stamped automatically (today). The checksum lets Supabase detect a lead editing the value. Calendly drops non-UTM keys, so the code rides <code>utm_content</code>; it appears in Calendly's webhook payload.</p>
+  </div>
+
+  <!-- DECODE -->
+  <div class="pane" id="dec">
+      <div class="field"><label>Paste a token or full URL</label>
+        <textarea id="decin" placeholder="eyJm...== .h84p   or   https://...?utm_content=eyJm..."></textarea>
+      </div>
+      <div class="decoded">
+        <div class="lbl"><span class="dot" id="statusdot" style="background:var(--muted)"></span>Result <span id="status" style="margin-left:6px"></span></div>
+        <table id="dectable"><tbody></tbody></table>
+      </div>
+      <p class="note">Shows the sales team exactly how a packed link unpacks. A failed checksum or unreadable token flags as tampered/invalid rather than guessing.</p>
+  </div>
+ </div>
+</div>
+
+<script>
+  var $=function(id){return document.getElementById(id)};
+
+  // ---- shared codec (verified against Node) ----
+  function b64urlEncode(str){
+    var b64 = btoa(unescape(encodeURIComponent(str)));
+    return b64.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+  function b64urlDecode(s){
+    s = s.replace(/-/g,'+').replace(/_/g,'/');
+    while(s.length % 4) s += '=';
+    return decodeURIComponent(escape(atob(s)));
+  }
+  function checksum(str){
+    var h=5381; for(var i=0;i<str.length;i++){ h=((h<<5)+h + str.charCodeAt(i))>>>0; }
+    return ('0000'+ (h>>>0).toString(36)).slice(-4);
+  }
+  function encodeToken(obj){
+    var t=b64urlEncode(JSON.stringify(obj));
+    return t + '.' + checksum(t);
+  }
+  function decodeToken(packed){
+    packed=(packed||'').trim();
+    var dot=packed.lastIndexOf('.');
+    if(dot<0) return {ok:false,reason:'No checksum found'};
+    var t=packed.slice(0,dot), cs=packed.slice(dot+1);
+    var valid=checksum(t)===cs, obj;
+    try{ obj=JSON.parse(b64urlDecode(t)); }
+    catch(e){ return {ok:false,reason:'Token unreadable',tamper:!valid}; }
+    return {ok:true,tamper:!valid,data:obj};
+  }
+
+  // ---- tabs ----
+  document.querySelectorAll('.tab').forEach(function(t){t.onclick=function(){
+    document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('active')});
+    document.querySelectorAll('.pane').forEach(function(x){x.classList.remove('active')});
+    t.classList.add('active'); $(t.dataset.p).classList.add('active');
+  }});
+
+  // ---- encode ----
+  function dateStamp(){var d=new Date();return ''+d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');}
+  function buildEnc(){
+    var payload={f:$('funnel').value,l:$('loc').value,v:$('variant').value,d:dateStamp()};
+    var tok=encodeToken(payload);
+    var b=$('base').value.trim();
+    $('full').textContent = b ? b+(b.indexOf('?')>-1?'&':'?')+'utm_content='+encodeURIComponent(tok) : '(add destination link above)';
+  }
+  $('base').addEventListener('input',buildEnc);
+  ['funnel','loc','variant'].forEach(function(id){
+    $(id).addEventListener('change',buildEnc);
+  });
+  buildEnc();
+
+  // ---- decode ----
+  var LABELS={f:'Funnel',l:'Link location',v:'Variant',d:'Date'};
+  function fmtDate(d){ if(/^\d{8}$/.test(d)) return d.slice(0,4)+'-'+d.slice(4,6)+'-'+d.slice(6,8); return d; }
+  function pretty(v){ return (v||'').replace(/_/g,' '); }
+  function runDecode(){
+    var raw=$('decin').value.trim(), tok=raw;
+    if(raw.indexOf('utm_content=')>-1){
+      try{ tok = new URL(raw).searchParams.get('utm_content') || raw; }
+      catch(e){ var m=raw.match(/utm_content=([^&\s]+)/); if(m) tok=decodeURIComponent(m[1]); }
+    }
+    var tb=$('dectable').querySelector('tbody'); tb.innerHTML='';
+    var st=$('status'), dot=$('statusdot');
+    if(!tok){ st.innerHTML=''; dot.style.background='var(--muted)'; return; }
+    var r=decodeToken(tok);
+    if(!r.ok){
+      st.innerHTML='<span class="badge bad">'+r.reason+'</span>'; dot.style.background='var(--warn)';
+      return;
+    }
+    if(r.tamper){ st.innerHTML='<span class="badge bad">Checksum mismatch &middot; tampered</span>'; dot.style.background='var(--warn)'; }
+    else { st.innerHTML='<span class="badge ok">Valid</span>'; dot.style.background='var(--ok)'; }
+    ['f','l','v','d'].forEach(function(k){
+      if(r.data[k]===undefined) return;
+      var val = k==='d'? fmtDate(r.data[k]) : pretty(r.data[k]);
+      var tr=document.createElement('tr');
+      tr.innerHTML='<td class="k">'+LABELS[k]+'</td><td>'+val+' <span style="color:var(--muted);font-size:11px">('+r.data[k]+')</span></td>';
+      tb.appendChild(tr);
+    });
+  }
+  $('decin').addEventListener('input',runDecode);
+
+  // ---- copy ----
+  document.querySelectorAll('.copy').forEach(function(btn){btn.onclick=function(){
+    var t=btn.parentElement.querySelector('span').textContent;
+    navigator.clipboard.writeText(t).then(function(){btn.textContent='Copied';setTimeout(function(){btn.textContent='Copy'},1200)});
+  }});
+</script>
+</body>
+</html>
