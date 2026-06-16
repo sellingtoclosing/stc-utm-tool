@@ -29,7 +29,7 @@
   .tab:hover{color:var(--ink);border-color:var(--accent-dim)}
   .tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
   .pane{display:none}.pane.active{display:block}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
   label{display:block;font-size:11px;color:var(--muted);margin:0 0 4px;font-weight:600;letter-spacing:.03em;text-transform:uppercase}
   .field{margin-bottom:4px}
   .hint{font-size:10.5px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px}
@@ -38,6 +38,15 @@
   textarea{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:12.5px;min-height:64px;resize:vertical}
   select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239a9aa5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:30px}
   input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(226,52,47,.18)}
+  /* multi-tag chip input */
+  .tagbox{display:flex;flex-wrap:wrap;gap:6px;align-items:center;background:var(--field);border:1px solid var(--line);border-radius:8px;padding:6px 8px;min-height:38px}
+  .tagbox:focus-within{border-color:var(--accent);box-shadow:0 0 0 2px rgba(226,52,47,.18)}
+  .tagbox input{width:auto;flex:1;min-width:90px;background:transparent;border:0;border-radius:0;padding:3px 2px;font-size:13px}
+  .tagbox input:focus{box-shadow:none;border:0}
+  .chip{display:inline-flex;align-items:center;gap:5px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:2px 5px 2px 9px;font-size:12px;color:var(--ink);max-width:100%}
+  .chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chip button{background:none;border:0;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0 2px}
+  .chip button:hover{color:var(--accent)}
   .lbl{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em;margin:16px 0 6px;display:flex;align-items:center;gap:8px}
   .dot{width:7px;height:7px;border-radius:50%;display:inline-block;background:var(--accent)}
   .codeblock{background:var(--code);border:1px solid var(--line);border-radius:9px;padding:12px 60px 12px 14px;position:relative;
@@ -106,15 +115,18 @@
             <option value="retarget">Retarget</option>
           </select>
         </div>
-        <div class="field"><label>Custom tag <span class="hint">optional &middot; free text</span></label>
-          <input id="custom" placeholder="e.g. q3-promo">
+        <div class="field"><label>Custom tags <span class="hint">optional &middot; type + Enter</span></label>
+          <div id="tagbox" class="tagbox">
+            <span id="tagchips"></span>
+            <input id="custom" placeholder="add a tag, press Enter" autocomplete="off">
+          </div>
         </div>
       </div>
 
       <div class="lbl"><span class="dot"></span>Full link &middot; copy this</div>
       <div class="codeblock"><button class="copy">Copy</button><span id="full"></span></div>
 
-      <p class="note">Token = base64url(JSON) + <code>.</code> + checksum. The JSON carries full-name keys (<code>funnel</code>, <code>linkLocation</code>, <code>variant</code>, <code>date</code>, <code>customTag</code>) so it decodes self-describing, with every key always present (empty string when unset). Link location, variant and custom tag are optional. Date stamps automatically as ISO <code>YYYY-MM-DD</code> (today). The checksum lets Supabase detect a lead editing the value. Calendly drops non-UTM keys, so the code rides <code>utm_content</code>; it appears in Calendly's webhook payload.</p>
+      <p class="note">Token = base64url(JSON) + <code>.</code> + checksum. The JSON carries full-name keys (<code>funnel</code>, <code>linkLocation</code>, <code>variant</code>, <code>date</code>, <code>customTags</code>) so it decodes self-describing, with every key always present. <code>customTags</code> is an array (empty when none); link location and variant are optional. Date stamps automatically as ISO <code>YYYY-MM-DD</code> (today). The checksum lets Supabase detect a lead editing the value. Calendly drops non-UTM keys, so the code rides <code>utm_content</code>; it appears in Calendly's webhook payload.</p>
   </div>
 
   <!-- DECODE -->
@@ -137,6 +149,7 @@
 
 <script>
   var $=function(id){return document.getElementById(id)};
+  function esc(s){ return (''+s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
 
   // ---- shared codec (verified against Node) ----
   function b64urlEncode(str){
@@ -176,41 +189,65 @@
 
   // ---- encode ----
   function dateStamp(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+
+  // custom tags (multi)
+  var tags=[];
+  function renderChips(){
+    $('tagchips').innerHTML = tags.map(function(t,i){
+      return '<span class="chip"><span>'+esc(t)+'</span><button type="button" data-i="'+i+'" aria-label="remove tag">&times;</button></span>';
+    }).join('');
+  }
+  function addFromInput(){
+    $('custom').value.split(',').forEach(function(p){ var v=p.trim(); if(v && tags.indexOf(v)===-1) tags.push(v); });
+    $('custom').value=''; renderChips(); buildEnc();
+  }
   function buildEnc(){
     var payload={
       funnel:$('funnel').value,
       linkLocation:$('loc').value,
       variant:$('variant').value,
       date:dateStamp(),
-      customTag:$('custom').value.trim()
+      customTags:tags.slice()
     };
     var tok=encodeToken(payload);
     var b=$('base').value.trim();
     $('full').textContent = b ? b+(b.indexOf('?')>-1?'&':'?')+'utm_content='+encodeURIComponent(tok) : '(add destination link above)';
   }
   $('base').addEventListener('input',buildEnc);
-  ['funnel','loc','variant'].forEach(function(id){
-    $(id).addEventListener('change',buildEnc);
+  ['funnel','loc','variant'].forEach(function(id){ $(id).addEventListener('change',buildEnc); });
+  $('custom').addEventListener('keydown',function(e){
+    if(e.key==='Enter'||e.key===','){ e.preventDefault(); addFromInput(); }
+    else if(e.key==='Backspace' && $('custom').value==='' && tags.length){ tags.pop(); renderChips(); buildEnc(); }
   });
-  $('custom').addEventListener('input',buildEnc);
+  $('custom').addEventListener('blur',function(){ if($('custom').value.trim()) addFromInput(); });
+  $('tagchips').addEventListener('click',function(e){
+    var b=e.target.closest('button'); if(!b) return;
+    tags.splice(+b.dataset.i,1); renderChips(); buildEnc();
+  });
+  // clicking anywhere in the box focuses the text input
+  $('tagbox').addEventListener('click',function(e){ if(e.target===$('tagbox')) $('custom').focus(); });
   buildEnc();
 
   // ---- decode ----
-  function esc(s){ return (''+s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
   function fmtDate(d){ d=''+(d||''); if(/^\d{8}$/.test(d)) return d.slice(0,4)+'-'+d.slice(4,6)+'-'+d.slice(6,8); return d; }
   function pretty(v){ return (''+(v||'')).replace(/_/g,' '); }
   // accept both new full-name keys and legacy short keys (f/l/v/d/c)
   function pick(obj,full,short){ return obj[full]!==undefined?obj[full]:(obj[short]!==undefined?obj[short]:''); }
+  function pickTags(obj){
+    if(Array.isArray(obj.customTags)) return obj.customTags;
+    var single = obj.customTag!==undefined?obj.customTag:(obj.c!==undefined?obj.c:'');
+    return single ? [single] : [];
+  }
   function normalize(obj){
     return {
       funnel: pick(obj,'funnel','f'),
       linkLocation: pick(obj,'linkLocation','l'),
       variant: pick(obj,'variant','v'),
       date: fmtDate(pick(obj,'date','d')),
-      customTag: pick(obj,'customTag','c')
+      customTags: pickTags(obj)
     };
   }
-  var ROWS=[['funnel','Funnel'],['linkLocation','Link location'],['variant','Variant'],['date','Date'],['customTag','Custom tag']];
+  var ROWS=[['funnel','Funnel'],['linkLocation','Link location'],['variant','Variant'],['date','Date'],['customTags','Custom tags']];
   function runDecode(){
     var raw=$('decin').value.trim(), tok=raw;
     if(raw.indexOf('utm_content=')>-1){
@@ -229,9 +266,11 @@
     if(r.tamper){ st.innerHTML='<span class="badge bad">Checksum mismatch &middot; tampered</span>'; dot.style.background='var(--warn)'; }
     else { st.innerHTML='<span class="badge ok">Valid</span>'; dot.style.background='var(--ok)'; }
     var norm=normalize(r.data);
+    var none='<span style="color:var(--muted)">(none)</span>';
     ROWS.forEach(function(pair){
-      var k=pair[0], v=norm[k];
-      var disp = v ? esc((k==='customTag'||k==='date') ? v : pretty(v)) : '<span style="color:var(--muted)">(none)</span>';
+      var k=pair[0], v=norm[k], disp;
+      if(k==='customTags'){ disp = (v && v.length) ? v.map(function(t){return esc(t);}).join(', ') : none; }
+      else { disp = v ? esc((k==='date') ? v : pretty(v)) : none; }
       var tr=document.createElement('tr');
       tr.innerHTML='<td class="k">'+pair[1]+'</td><td>'+disp+'</td>';
       tb.appendChild(tr);
