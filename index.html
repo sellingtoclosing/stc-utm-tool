@@ -252,6 +252,7 @@
     }
     box.classList.remove('empty');
     var payload={
+      ver:1,
       funnel:funnelValue(),
       linkLocation:$('loc').value,
       variant:$('variant').value,
@@ -290,6 +291,7 @@
   }
   function normalize(obj){
     return {
+      ver: obj.ver!==undefined?obj.ver:(obj.version!==undefined?obj.version:null),
       funnel: pick(obj,'funnel','f'),
       linkLocation: pick(obj,'linkLocation','l'),
       variant: pick(obj,'variant','v'),
@@ -297,7 +299,7 @@
       customTags: pickTags(obj)
     };
   }
-  var ROWS=[['funnel','Funnel'],['linkLocation','Link location'],['variant','Variant'],['date','Date'],['customTags','Custom tags']];
+  var ROWS=[['ver','Schema version'],['funnel','Funnel'],['linkLocation','Link location'],['variant','Variant'],['date','Date'],['customTags','Custom tags']];
   function runDecode(){
     var raw=$('decin').value.trim(), tok=raw;
     if(raw.indexOf('utm_content=')>-1){
